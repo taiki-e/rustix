@@ -110,10 +110,8 @@ fn main() {
         || !inline_asm_name_present
         || is_unsupported_abi
         || miri
-        || ((arch == "powerpc"
-            || arch == "powerpc64"
-            || arch == "s390x"
-            || arch.starts_with("mips"))
+        || (arch == "s390x" && !has_asm())
+        || ((arch == "powerpc" || arch == "powerpc64" || arch.starts_with("mips"))
             && !rustix_use_experimental_asm);
     if libc {
         if os != "android" && os == "linux" && !cfg_no_linux_raw {
@@ -210,6 +208,12 @@ fn has_lower_upper_exp_for_non_zero() -> bool {
     // LowerExp/UpperExp for NonZero* were added in Rust 1.84.
     // <https://doc.rust-lang.org/stable/std/fmt/trait.LowerExp.html#impl-LowerExp-for-NonZero%3CT%3E>
     can_compile("fn a(x: &core::num::NonZeroI32, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { core::fmt::LowerExp::fmt(x, f) }")
+}
+
+fn has_asm() -> bool {
+    // asm for s390x was stabilized in Rust 1.84.
+    // <https://github.com/rust-lang/rust/pull/131258>
+    can_compile("pub unsafe fn f() { core::arch::asm!(\"\"); }")
 }
 
 fn use_feature_or_nothing(feature: &str) {
