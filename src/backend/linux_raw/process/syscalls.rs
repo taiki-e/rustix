@@ -90,7 +90,11 @@ pub(crate) fn setpgid(pid: Option<Pid>, pgid: Option<Pid>) -> io::Result<()> {
 #[must_use]
 pub(crate) fn getpgrp() -> Pid {
     // Use the `getpgrp` syscall if available.
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64")))]
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    )))]
     unsafe {
         let pgid = ret_c_int_infallible(syscall_readonly!(__NR_getpgrp));
         debug_assert!(pgid > 0);
@@ -98,7 +102,11 @@ pub(crate) fn getpgrp() -> Pid {
     }
 
     // Otherwise use `getpgrp` and pass it zero.
-    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    #[cfg(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    ))]
     unsafe {
         let pgid = ret_c_int_infallible(syscall_readonly!(__NR_getpgid, c_uint(0)));
         debug_assert!(pgid > 0);
@@ -302,6 +310,7 @@ pub(crate) fn _waitpid(
     unsafe {
         let mut status = MaybeUninit::<i32>::uninit();
         let pid = ret_c_int(syscall!(
+            // TODO: __NR_waitid for riscv32?
             __NR_wait4,
             c_int(pid as _),
             &mut status,

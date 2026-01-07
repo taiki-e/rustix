@@ -19,6 +19,7 @@ use core::arch::global_asm;
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",
@@ -29,7 +30,7 @@ use core::mem::transmute;
 use core::ptr::null_mut;
 use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::Ordering::Relaxed;
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(target_pointer_width = "32", not(target_arch = "riscv32")))]
 #[cfg(feature = "time")]
 use linux_raw_sys::general::timespec as __kernel_old_timespec;
 #[cfg(any(
@@ -38,6 +39,7 @@ use linux_raw_sys::general::timespec as __kernel_old_timespec;
         any(
             target_arch = "x86_64",
             target_arch = "x86",
+            target_arch = "riscv32",
             target_arch = "riscv64",
             target_arch = "powerpc",
             target_arch = "powerpc64",
@@ -121,6 +123,7 @@ pub(crate) fn clock_gettime_dynamic(id: DynamicClockId<'_>) -> io::Result<Timesp
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",
@@ -274,6 +277,7 @@ type ClockGettimeType = unsafe extern "C" fn(c::c_int, *mut Timespec) -> c::c_in
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",
@@ -302,6 +306,7 @@ fn init_clock_gettime() -> ClockGettimeType {
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",
@@ -334,6 +339,7 @@ static CLOCK_GETTIME: AtomicPtr<Function> = AtomicPtr::new(null_mut());
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",
@@ -357,6 +363,8 @@ unsafe extern "C" fn clock_gettime_via_syscall(clockid: c::c_int, res: *mut Time
 unsafe fn _clock_gettime_via_syscall(clockid: c::c_int, res: *mut Timespec) -> io::Result<()> {
     let r0 = syscall!(__NR_clock_gettime64, c_int(clockid), res);
     match ret(r0) {
+        // riscv32 always supports `clock_gettime64` and has no `__NR_clock_gettime`.
+        #[cfg(not(target_arch = "riscv32"))]
         Err(io::Errno::NOSYS) => _clock_gettime_via_syscall_old(clockid, res),
         otherwise => otherwise,
     }
@@ -364,6 +372,8 @@ unsafe fn _clock_gettime_via_syscall(clockid: c::c_int, res: *mut Timespec) -> i
 
 #[cfg(feature = "time")]
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `clock_gettime64` and has no `__NR_clock_gettime`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn _clock_gettime_via_syscall_old(clockid: c::c_int, res: *mut Timespec) -> io::Result<()> {
     // Ordinarily `rustix` doesn't like to emulate system calls, but in the
     // case of time APIs, it's specific to Linux, specific to 32-bit
@@ -394,6 +404,7 @@ unsafe fn _clock_gettime_via_syscall(clockid: c::c_int, res: *mut Timespec) -> i
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",
@@ -464,6 +475,7 @@ fn minimal_init() {
     #[cfg(any(
         target_arch = "x86_64",
         target_arch = "x86",
+        target_arch = "riscv32",
         target_arch = "riscv64",
         target_arch = "powerpc",
         target_arch = "powerpc64",
@@ -512,7 +524,7 @@ fn init() {
             let ptr = vdso.sym(cstr!("LINUX_2.6.39"), cstr!("__kernel_clock_gettime"));
             #[cfg(target_arch = "x86")]
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_clock_gettime64"));
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             let ptr = vdso.sym(cstr!("LINUX_4.15"), cstr!("__vdso_clock_gettime"));
             #[cfg(target_arch = "powerpc")]
             let ptr = vdso.sym(cstr!("LINUX_5.11"), cstr!("__kernel_clock_gettime64"));
@@ -525,9 +537,9 @@ fn init() {
             #[cfg(any(target_arch = "mips64", target_arch = "mips64r6"))]
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_clock_gettime"));
 
-            // On all 64-bit platforms, the 64-bit `clock_gettime` symbols are
+            // On all 64-bit platforms and riscv32, the 64-bit `clock_gettime` symbols are
             // always available.
-            #[cfg(target_pointer_width = "64")]
+            #[cfg(any(target_pointer_width = "64", target_arch = "riscv32"))]
             let ok = true;
 
             // On some 32-bit platforms, the 64-bit `clock_gettime` symbols are
@@ -555,6 +567,7 @@ fn init() {
         #[cfg(any(
             target_arch = "x86_64",
             target_arch = "x86",
+            target_arch = "riscv32",
             target_arch = "riscv64",
             target_arch = "powerpc",
             target_arch = "powerpc64",
@@ -569,7 +582,7 @@ fn init() {
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_getcpu"));
             #[cfg(target_arch = "x86")]
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_getcpu"));
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             let ptr = vdso.sym(cstr!("LINUX_4.15"), cstr!("__vdso_getcpu"));
             #[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
             let ptr = vdso.sym(cstr!("LINUX_2.6.15"), cstr!("__kernel_getcpu"));
@@ -578,6 +591,7 @@ fn init() {
 
             #[cfg(any(
                 target_arch = "x86_64",
+                target_arch = "riscv32",
                 target_arch = "riscv64",
                 target_arch = "powerpc",
                 target_arch = "powerpc64",

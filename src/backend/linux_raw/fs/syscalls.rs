@@ -11,6 +11,7 @@ use crate::backend::conv::fs::oflags_for_open_how;
 #[cfg(any(
     not(feature = "linux_4_11"),
     target_arch = "aarch64",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "mips",
     target_arch = "mips32r6",
@@ -24,7 +25,11 @@ use crate::backend::conv::{
 use crate::backend::conv::{loff_t, loff_t_from_u64, ret_u64};
 use crate::fd::{BorrowedFd, OwnedFd};
 use crate::ffi::CStr;
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+#[cfg(any(
+    target_arch = "aarch64",
+    target_arch = "riscv32",
+    target_arch = "riscv64",
+))]
 use crate::fs::CWD;
 use crate::fs::{
     inotify, Access, Advice, AtFlags, FallocateFlags, FileType, FlockOperation, Fsid, Gid,
@@ -52,11 +57,19 @@ pub(crate) fn open(path: &CStr, flags: OFlags, mode: Mode) -> io::Result<OwnedFd
     // Always enable support for large files.
     let flags = flags | OFlags::LARGEFILE;
 
-    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    #[cfg(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    ))]
     {
         openat(CWD, path, flags, mode)
     }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64")))]
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    )))]
     unsafe {
         ret_owned_fd(syscall_readonly!(__NR_open, path, flags, mode))
     }
@@ -161,14 +174,22 @@ pub(crate) fn chownat(
 #[inline]
 pub(crate) fn chown(path: &CStr, owner: Option<Uid>, group: Option<Gid>) -> io::Result<()> {
     // Most architectures have a `chown` syscall.
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64")))]
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    )))]
     unsafe {
         let (ow, gr) = crate::ugid::translate_fchown_args(owner, group);
         ret(syscall_readonly!(__NR_chown, path, c_uint(ow), c_uint(gr)))
     }
 
     // Aarch64 and RISC-V don't, so use `fchownat`.
-    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    #[cfg(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    ))]
     unsafe {
         let (ow, gr) = crate::ugid::translate_fchown_args(owner, group);
         ret(syscall_readonly!(
@@ -247,10 +268,26 @@ pub(crate) fn seek(fd: BorrowedFd<'_>, pos: SeekFrom) -> io::Result<u64> {
 #[inline]
 pub(crate) fn _seek(fd: BorrowedFd<'_>, offset: i64, whence: c::c_uint) -> io::Result<u64> {
     #[cfg(target_pointer_width = "32")]
+    #[cfg(not(target_arch = "riscv32"))]
     unsafe {
         let mut result = MaybeUninit::<u64>::uninit();
         ret(syscall!(
             __NR__llseek,
+            fd,
+            // Don't use the hi/lo functions here because Linux's llseek
+            // takes its 64-bit argument differently from everything else.
+            pass_usize((offset >> 32) as usize),
+            pass_usize(offset as usize),
+            &mut result,
+            c_uint(whence)
+        ))?;
+        Ok(result.assume_init())
+    }
+    #[cfg(target_arch = "riscv32")]
+    unsafe {
+        let mut result = MaybeUninit::<u64>::uninit();
+        ret(syscall!(
+            __NR_llseek,
             fd,
             // Don't use the hi/lo functions here because Linux's llseek
             // takes its 64-bit argument differently from everything else.
@@ -529,6 +566,7 @@ fn fstat_old(fd: BorrowedFd<'_>) -> io::Result<Stat> {
 
     #[cfg(target_pointer_width = "32")]
     unsafe {
+        // TODO: __NR_fstatfs64 for riscv32?
         ret(syscall!(__NR_fstat64, fd, &mut result))?;
         stat_to_stat(result.assume_init())
     }
@@ -596,6 +634,7 @@ fn stat_old(path: &CStr) -> io::Result<Stat> {
     #[cfg(target_pointer_width = "32")]
     unsafe {
         ret(syscall!(
+            // TODO: __NR_fstatfs64 for riscv32?
             __NR_fstatat64,
             raw_fd(AT_FDCWD),
             path,
@@ -650,6 +689,7 @@ fn statat_old(dirfd: BorrowedFd<'_>, path: &CStr, flags: AtFlags) -> io::Result<
 
     #[cfg(target_pointer_width = "32")]
     unsafe {
+        // TODO: __NR_fstatfs64 for riscv32
         ret(syscall!(__NR_fstatat64, dirfd, path, &mut result, flags))?;
         stat_to_stat(result.assume_init())
     }
@@ -705,6 +745,7 @@ fn lstat_old(path: &CStr) -> io::Result<Stat> {
     #[cfg(target_pointer_width = "32")]
     unsafe {
         ret(syscall!(
+            // TODO: __NR_fstatfs64 for riscv32?
             __NR_fstatat64,
             raw_fd(AT_FDCWD),
             path,
@@ -1099,7 +1140,7 @@ pub(crate) fn fcntl_lock(fd: BorrowedFd<'_>, operation: FlockOperation) -> io::R
 
 #[inline]
 pub(crate) fn rename(old_path: &CStr, new_path: &CStr) -> io::Result<()> {
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     unsafe {
         ret(syscall_readonly!(
             __NR_renameat2,
@@ -1110,7 +1151,7 @@ pub(crate) fn rename(old_path: &CStr, new_path: &CStr) -> io::Result<()> {
             c_uint(0)
         ))
     }
-    #[cfg(not(target_arch = "riscv64"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     unsafe {
         ret(syscall_readonly!(
             __NR_renameat,
@@ -1129,7 +1170,7 @@ pub(crate) fn renameat(
     new_dirfd: BorrowedFd<'_>,
     new_path: &CStr,
 ) -> io::Result<()> {
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
     unsafe {
         ret(syscall_readonly!(
             __NR_renameat2,
@@ -1140,7 +1181,7 @@ pub(crate) fn renameat(
             c_uint(0)
         ))
     }
-    #[cfg(not(target_arch = "riscv64"))]
+    #[cfg(not(any(target_arch = "riscv32", target_arch = "riscv64")))]
     unsafe {
         ret(syscall_readonly!(
             __NR_renameat,
@@ -1315,6 +1356,8 @@ fn _utimensat(
             by_ref(times),
             flags
         )) {
+            // riscv32 always supports `utimensat_time64` and has no `__NR_utimensat`.
+            #[cfg(not(target_arch = "riscv32"))]
             Err(io::Errno::NOSYS) => _utimensat_old(dirfd, path, times, flags),
             otherwise => otherwise,
         }
@@ -1332,6 +1375,8 @@ fn _utimensat(
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `utimensat_time64` and has no `__NR_utimensat`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn _utimensat_old(
     dirfd: BorrowedFd<'_>,
     path: Option<&CStr>,
@@ -1383,12 +1428,20 @@ pub(crate) fn futimens(fd: BorrowedFd<'_>, times: &Timestamps) -> io::Result<()>
 
 #[inline]
 pub(crate) fn access(path: &CStr, access: Access) -> io::Result<()> {
-    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    #[cfg(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    ))]
     {
         accessat_noflags(CWD, path, access)
     }
 
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64")))]
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "riscv32",
+        target_arch = "riscv64",
+    )))]
     unsafe {
         ret(syscall_readonly!(__NR_access, path, access))
     }

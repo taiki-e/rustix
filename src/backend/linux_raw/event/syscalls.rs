@@ -28,6 +28,8 @@ pub(crate) fn poll(fds: &mut [PollFd<'_>], timeout: Option<&Timespec>) -> io::Re
         // falling back on `Errno::NOSYS`, because seccomp configurations will
         // sometimes abort the process on syscalls they don't recognize.
         #[cfg(not(feature = "linux_5_1"))]
+        // riscv32 always supports `ppoll_time64` and has no `__NR_ppoll`.
+        #[cfg(not(target_arch = "riscv32"))]
         {
             use linux_raw_sys::general::__kernel_old_timespec;
 
@@ -144,6 +146,8 @@ pub(crate) unsafe fn select(
         // falling back on `Errno::NOSYS`, because seccomp configurations will
         // sometimes abort the process on syscalls they don't recognize.
         #[cfg(not(feature = "linux_5_1"))]
+        // riscv32 always supports `pselect6_time64` and has no `__NR_pselect6`.
+        #[cfg(not(target_arch = "riscv32"))]
         {
             use linux_raw_sys::general::__kernel_old_timespec;
 
@@ -349,8 +353,19 @@ pub(crate) fn pause() {
             zero(),
             zero()
         ));
-
-        #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64")))]
+        #[cfg(target_arch = "riscv32")]
+        let error = ret_error(syscall_readonly!(
+            __NR_ppoll_time64,
+            zero(),
+            zero(),
+            zero(),
+            zero()
+        ));
+        #[cfg(not(any(
+            target_arch = "aarch64",
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+        )))]
         let error = ret_error(syscall_readonly!(__NR_pause));
 
         debug_assert_eq!(error, io::Errno::INTR);

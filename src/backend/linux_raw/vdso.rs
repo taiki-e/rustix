@@ -443,7 +443,7 @@ mod tests {
             let ptr = vdso.sym(cstr!("LINUX_2.6.39"), cstr!("__kernel_clock_gettime"));
             #[cfg(target_arch = "x86")]
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_clock_gettime64"));
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             let ptr = vdso.sym(cstr!("LINUX_4.15"), cstr!("__vdso_clock_gettime"));
             #[cfg(target_arch = "powerpc")]
             let _ptr = vdso.sym(cstr!("LINUX_5.11"), cstr!("__kernel_clock_gettime64"));
@@ -473,7 +473,7 @@ mod tests {
             let ptr = vdso.sym(cstr!("LINUX_2.6.39"), cstr!("__kernel_clock_getres"));
             #[cfg(target_arch = "x86")]
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_clock_getres"));
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             let ptr = vdso.sym(cstr!("LINUX_4.15"), cstr!("__vdso_clock_getres"));
             #[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
             let ptr = vdso.sym(cstr!("LINUX_2.6.15"), cstr!("__kernel_clock_getres"));
@@ -498,7 +498,7 @@ mod tests {
             let ptr = vdso.sym(cstr!("LINUX_2.6.39"), cstr!("__kernel_gettimeofday"));
             #[cfg(target_arch = "x86")]
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_gettimeofday"));
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             let ptr = vdso.sym(cstr!("LINUX_4.15"), cstr!("__vdso_gettimeofday"));
             #[cfg(any(target_arch = "powerpc", target_arch = "powerpc64"))]
             let ptr = vdso.sym(cstr!("LINUX_2.6.15"), cstr!("__kernel_gettimeofday"));
@@ -527,7 +527,7 @@ mod tests {
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_getcpu"));
             #[cfg(target_arch = "x86")]
             let ptr = vdso.sym(cstr!("LINUX_2.6"), cstr!("__vdso_getcpu"));
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             let ptr = vdso.sym(cstr!("LINUX_4.15"), cstr!("__vdso_getcpu"));
             #[cfg(target_arch = "powerpc")]
             let ptr = vdso.sym(cstr!("LINUX_2.6.15"), cstr!("__kernel_getcpu"));

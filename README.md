@@ -32,7 +32,7 @@ more portable APIs built on this functionality, see the [`cap-std`], [`memfd`],
 `rustix` currently has two backends available:
 
  * linux_raw, which uses raw Linux system calls and vDSO calls, and is
-   supported on Linux on x86-64, x86, aarch64, riscv64gc, powerpc64le,
+   supported on Linux on x86-64, x86, aarch64, riscv32gc, riscv64gc, powerpc, powerpc64le, s390x,
    arm (v5 onwards), mipsel, and mips64el, with stable, nightly, and 1.63 Rust.
     - By being implemented entirely in Rust, avoiding `libc`, `errno`, and pthread
       cancellation, and employing some specialized optimizations, most functions

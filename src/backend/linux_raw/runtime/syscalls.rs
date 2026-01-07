@@ -26,7 +26,11 @@ use crate::signal::Signal;
 use crate::timespec::Timespec;
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
-#[cfg(all(target_pointer_width = "32", not(feature = "linux_5_1")))]
+#[cfg(all(
+    target_pointer_width = "32",
+    not(target_arch = "riscv32"),
+    not(feature = "linux_5_1")
+))]
 use linux_raw_sys::general::__kernel_old_timespec;
 #[cfg(target_arch = "x86_64")]
 use linux_raw_sys::general::ARCH_SET_FS;
@@ -58,6 +62,7 @@ pub(crate) unsafe fn kernel_fork() -> io::Result<Fork> {
         target_arch = "mips64r6",
         target_arch = "powerpc",
         target_arch = "powerpc64",
+        target_arch = "riscv32",
         target_arch = "riscv64",
         target_arch = "s390x",
         target_arch = "x86"
@@ -219,18 +224,40 @@ pub(crate) fn kernel_sigsuspend(set: &KernelSigSet) -> io::Result<()> {
 
 #[inline]
 pub(crate) unsafe fn kernel_sigwait(set: &KernelSigSet) -> io::Result<Signal> {
-    Ok(Signal::from_raw_unchecked(ret_c_int(syscall_readonly!(
-        __NR_rt_sigtimedwait,
-        by_ref(set),
-        zero(),
-        zero(),
-        size_of::<KernelSigSet, _>()
-    ))?))
+    #[cfg(target_arch = "riscv32")]
+    {
+        Ok(Signal::from_raw_unchecked(ret_c_int(syscall_readonly!(
+            __NR_rt_sigtimedwait_time64,
+            by_ref(set),
+            zero(),
+            zero(),
+            size_of::<KernelSigSet, _>()
+        ))?))
+    }
+    #[cfg(not(target_arch = "riscv32"))]
+    {
+        Ok(Signal::from_raw_unchecked(ret_c_int(syscall_readonly!(
+            __NR_rt_sigtimedwait,
+            by_ref(set),
+            zero(),
+            zero(),
+            size_of::<KernelSigSet, _>()
+        ))?))
+    }
 }
 
 #[inline]
 pub(crate) unsafe fn kernel_sigwaitinfo(set: &KernelSigSet) -> io::Result<Siginfo> {
     let mut info = MaybeUninit::<Siginfo>::uninit();
+    #[cfg(target_arch = "riscv32")]
+    let _signum = ret_c_int(syscall!(
+        __NR_rt_sigtimedwait_time64,
+        by_ref(set),
+        &mut info,
+        zero(),
+        size_of::<KernelSigSet, _>()
+    ))?;
+    #[cfg(not(target_arch = "riscv32"))]
     let _signum = ret_c_int(syscall!(
         __NR_rt_sigtimedwait,
         by_ref(set),
@@ -261,6 +288,8 @@ pub(crate) unsafe fn kernel_sigtimedwait(
         // seccomp configurations will sometimes abort the process on syscalls
         // they don't recognize.
         #[cfg(not(feature = "linux_5_1"))]
+        // riscv32 always supports `rt_sigtimedwait_time64` and has no `__NR_rt_sigtimedwait`.
+        #[cfg(not(target_arch = "riscv32"))]
         {
             // If we don't have a timeout, or if we can convert the timeout to
             // a `__kernel_old_timespec`, the use `__NR_futex`.

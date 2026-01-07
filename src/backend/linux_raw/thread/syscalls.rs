@@ -20,7 +20,7 @@ use crate::thread::{
 use crate::utils::as_mut_ptr;
 use core::mem::MaybeUninit;
 use core::sync::atomic::AtomicU32;
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(target_pointer_width = "32", not(target_arch = "riscv32")))]
 use linux_raw_sys::general::timespec as __kernel_old_timespec;
 use linux_raw_sys::general::{membarrier_cmd, membarrier_cmd_flag, TIMER_ABSTIME};
 
@@ -38,11 +38,12 @@ pub(crate) fn clock_nanosleep_relative(id: ClockId, req: &Timespec) -> Nanosleep
         ))
         .or_else(|err| {
             // See the comments in `clock_gettime_via_syscall` about emulation.
+            // riscv32 always supports `clock_nanosleep_time64` and has no `__NR_nanosleep`.
+            #[cfg(not(target_arch = "riscv32"))]
             if err == io::Errno::NOSYS {
-                clock_nanosleep_relative_old(id, req, &mut rem)
-            } else {
-                Err(err)
+                return clock_nanosleep_relative_old(id, req, &mut rem);
             }
+            Err(err)
         }) {
             Ok(()) => NanosleepRelativeResult::Ok,
             Err(io::Errno::INTR) => NanosleepRelativeResult::Interrupted(rem.assume_init()),
@@ -67,6 +68,8 @@ pub(crate) fn clock_nanosleep_relative(id: ClockId, req: &Timespec) -> Nanosleep
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `clock_nanosleep_time64` and has no `__NR_nanosleep`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn clock_nanosleep_relative_old(
     id: ClockId,
     req: &Timespec,
@@ -105,11 +108,12 @@ pub(crate) fn clock_nanosleep_absolute(id: ClockId, req: &Timespec) -> io::Resul
         ))
         .or_else(|err| {
             // See the comments in `clock_gettime_via_syscall` about emulation.
+            // riscv32 always supports `clock_nanosleep_time64` and has no `__NR_nanosleep`.
+            #[cfg(not(target_arch = "riscv32"))]
             if err == io::Errno::NOSYS {
-                clock_nanosleep_absolute_old(id, req)
-            } else {
-                Err(err)
+                return clock_nanosleep_absolute_old(id, req);
             }
+            Err(err)
         })
     }
     #[cfg(target_pointer_width = "64")]
@@ -125,6 +129,8 @@ pub(crate) fn clock_nanosleep_absolute(id: ClockId, req: &Timespec) -> io::Resul
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `clock_nanosleep_time64` and has no `__NR_nanosleep`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn clock_nanosleep_absolute_old(id: ClockId, req: &Timespec) -> io::Result<()> {
     let old_req = __kernel_old_timespec {
         tv_sec: req.tv_sec.try_into().map_err(|_| io::Errno::INVAL)?,
@@ -153,11 +159,12 @@ pub(crate) fn nanosleep(req: &Timespec) -> NanosleepRelativeResult {
         ))
         .or_else(|err| {
             // See the comments in `clock_gettime_via_syscall` about emulation.
+            // riscv32 always supports `clock_nanosleep_time64` and has no `__NR_nanosleep`.
+            #[cfg(not(target_arch = "riscv32"))]
             if err == io::Errno::NOSYS {
-                nanosleep_old(req, &mut rem)
-            } else {
-                Err(err)
+                return nanosleep_old(req, &mut rem);
             }
+            Err(err)
         }) {
             Ok(()) => NanosleepRelativeResult::Ok,
             Err(io::Errno::INTR) => NanosleepRelativeResult::Interrupted(rem.assume_init()),
@@ -176,6 +183,8 @@ pub(crate) fn nanosleep(req: &Timespec) -> NanosleepRelativeResult {
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `clock_nanosleep_time64` and has no `__NR_nanosleep`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn nanosleep_old(req: &Timespec, rem: &mut MaybeUninit<Timespec>) -> io::Result<()> {
     let old_req = __kernel_old_timespec {
         tv_sec: req.tv_sec.try_into().map_err(|_| io::Errno::INVAL)?,
@@ -227,7 +236,8 @@ pub(crate) unsafe fn futex_val2(
         // need it here, because `timeout` is just passing `val2` and not a
         // real timeout, but it's nice to use `futex_time64` for consistency
         // with the other futex calls that do.
-        #[cfg(feature = "linux_5_1")]
+        // riscv32 always supports `futex_time64` and has no `__NR_futex`.
+        #[cfg(any(feature = "linux_5_1", target_arch = "riscv32"))]
         {
             ret_usize(syscall!(
                 __NR_futex_time64,
@@ -241,7 +251,7 @@ pub(crate) unsafe fn futex_val2(
         }
 
         // If we don't have Linux 5.1, use plain `futex`.
-        #[cfg(not(feature = "linux_5_1"))]
+        #[cfg(not(any(feature = "linux_5_1", target_arch = "riscv32")))]
         {
             ret_usize(syscall!(
                 __NR_futex,
@@ -288,6 +298,8 @@ pub(crate) unsafe fn futex_timeout(
         // falling back on `Errno::NOSYS`, because seccomp configurations will
         // sometimes abort the process on syscalls they don't recognize.
         #[cfg(not(feature = "linux_5_1"))]
+        // riscv32 always supports `futex_time64` and has no `__NR_futex`.
+        #[cfg(not(target_arch = "riscv32"))]
         {
             // If we don't have a timeout, or if we can convert the timeout to
             // a `__kernel_old_timespec`, the use `__NR_futex`.
@@ -450,6 +462,7 @@ pub(crate) fn setgroups_thread(gids: &[crate::ugid::Gid]) -> io::Result<()> {
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",
@@ -461,6 +474,7 @@ pub(crate) use crate::backend::vdso_wrappers::sched_getcpu;
 #[cfg(not(any(
     target_arch = "x86_64",
     target_arch = "x86",
+    target_arch = "riscv32",
     target_arch = "riscv64",
     target_arch = "powerpc",
     target_arch = "powerpc64",

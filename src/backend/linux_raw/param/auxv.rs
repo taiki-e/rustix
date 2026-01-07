@@ -528,6 +528,8 @@ unsafe fn check_elf_base(base: *const Elf_Ehdr) -> Option<NonNull<Elf_Ehdr>> {
     if hdr.e_ident[EI_DATA] != ELFDATA {
         return None; // Wrong ELF data
     }
+    // riscv32 doesn't have `EM_CURRENT`.
+    #[cfg(not(target_arch = "riscv32"))]
     if hdr.e_machine != EM_CURRENT {
         return None; // Wrong machine type
     }

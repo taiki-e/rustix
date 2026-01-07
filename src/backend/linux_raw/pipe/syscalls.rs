@@ -16,7 +16,7 @@ use linux_raw_sys::general::{F_GETPIPE_SZ, F_SETPIPE_SZ};
 
 #[inline]
 pub(crate) fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
-    // aarch64 and risc64 omit `__NR_pipe`. On mips, `__NR_pipe` uses a special
+    // aarch64, mips, and riscv omit `__NR_pipe`. On mips, `__NR_pipe` uses a special
     // calling convention, but using it is not worth complicating our syscall
     // wrapping infrastructure at this time.
     #[cfg(any(
@@ -25,6 +25,7 @@ pub(crate) fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
         target_arch = "mips32r6",
         target_arch = "mips64",
         target_arch = "mips64r6",
+        target_arch = "riscv32",
         target_arch = "riscv64",
     ))]
     {
@@ -36,6 +37,7 @@ pub(crate) fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
         target_arch = "mips32r6",
         target_arch = "mips64",
         target_arch = "mips64r6",
+        target_arch = "riscv32",
         target_arch = "riscv64",
     )))]
     unsafe {

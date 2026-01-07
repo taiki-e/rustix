@@ -12,9 +12,9 @@ use crate::io;
 use crate::time::{Itimerspec, TimerfdClockId, TimerfdFlags, TimerfdTimerFlags};
 use crate::timespec::Timespec;
 use core::mem::MaybeUninit;
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(target_pointer_width = "32", not(target_arch = "riscv32")))]
 use linux_raw_sys::general::itimerspec as __kernel_old_itimerspec;
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(target_pointer_width = "32", not(target_arch = "riscv32")))]
 use linux_raw_sys::general::timespec as __kernel_old_timespec;
 
 // `clock_gettime` has special optimizations via the vDSO.
@@ -24,6 +24,8 @@ pub(crate) use crate::backend::vdso_wrappers::{clock_gettime, clock_gettime_dyna
 #[must_use]
 pub(crate) fn clock_getres(id: ClockId) -> Timespec {
     #[cfg(target_pointer_width = "32")]
+    // riscv32 always supports `clock_getres_time64` and has no `__NR_clock_getres`.
+    #[cfg(not(target_arch = "riscv32"))]
     unsafe {
         let mut result = MaybeUninit::<Timespec>::uninit();
         if let Err(err) = ret(syscall!(__NR_clock_getres_time64, id, &mut result)) {
@@ -31,6 +33,13 @@ pub(crate) fn clock_getres(id: ClockId) -> Timespec {
             debug_assert_eq!(err, io::Errno::NOSYS);
             clock_getres_old(id, &mut result);
         }
+        result.assume_init()
+    }
+    // riscv32 always supports `clock_getres_time64` and has no `__NR_clock_getres`.
+    #[cfg(target_arch = "riscv32")]
+    unsafe {
+        let mut result = MaybeUninit::<Timespec>::uninit();
+        ret_infallible(syscall!(__NR_clock_getres_time64, id, &mut result));
         result.assume_init()
     }
     #[cfg(target_pointer_width = "64")]
@@ -42,6 +51,8 @@ pub(crate) fn clock_getres(id: ClockId) -> Timespec {
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `clock_getres_time64` and has no `__NR_clock_getres`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn clock_getres_old(id: ClockId, result: &mut MaybeUninit<Timespec>) {
     let mut old_result = MaybeUninit::<__kernel_old_timespec>::uninit();
     ret_infallible(syscall!(__NR_clock_getres, id, &mut old_result));
@@ -63,6 +74,8 @@ pub(crate) fn clock_settime(id: ClockId, timespec: Timespec) -> io::Result<()> {
             id,
             by_ref(&timespec)
         )) {
+            // riscv32 always supports `clock_settime64` and has no `__NR_clock_settime`.
+            #[cfg(not(target_arch = "riscv32"))]
             Err(io::Errno::NOSYS) => clock_settime_old(id, timespec),
             otherwise => otherwise,
         }
@@ -74,6 +87,8 @@ pub(crate) fn clock_settime(id: ClockId, timespec: Timespec) -> io::Result<()> {
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `clock_settime64` and has no `__NR_clock_settime`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn clock_settime_old(id: ClockId, timespec: Timespec) -> io::Result<()> {
     let old_timespec = __kernel_old_timespec {
         tv_sec: timespec
@@ -125,17 +140,20 @@ pub(crate) fn timerfd_settime(
         ))
         .or_else(|err| {
             // See the comments in `clock_gettime_via_syscall` about emulation.
+            // riscv32 always supports `timerfd_settime64` and has no `__NR_timerfd_settime`.
+            #[cfg(not(target_arch = "riscv32"))]
             if err == io::Errno::NOSYS {
-                timerfd_settime_old(fd, flags, new_value, &mut result)
-            } else {
-                Err(err)
+                return timerfd_settime_old(fd, flags, new_value, &mut result);
             }
+            Err(err)
         })?;
         Ok(result.assume_init())
     }
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `timerfd_settime64` and has no `__NR_timerfd_settime`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn timerfd_settime_old(
     fd: BorrowedFd<'_>,
     flags: TimerfdTimerFlags,
@@ -206,17 +224,20 @@ pub(crate) fn timerfd_gettime(fd: BorrowedFd<'_>) -> io::Result<Itimerspec> {
     unsafe {
         ret(syscall!(__NR_timerfd_gettime64, fd, &mut result)).or_else(|err| {
             // See the comments in `clock_gettime_via_syscall` about emulation.
+            // riscv32 always supports `timerfd_gettime64` and has no `__NR_timerfd_gettime`.
+            #[cfg(not(target_arch = "riscv32"))]
             if err == io::Errno::NOSYS {
-                timerfd_gettime_old(fd, &mut result)
-            } else {
-                Err(err)
+                return timerfd_gettime_old(fd, &mut result);
             }
+            Err(err)
         })?;
         Ok(result.assume_init())
     }
 }
 
 #[cfg(target_pointer_width = "32")]
+// riscv32 always supports `timerfd_gettime64` and has no `__NR_timerfd_gettime`.
+#[cfg(not(target_arch = "riscv32"))]
 unsafe fn timerfd_gettime_old(
     fd: BorrowedFd<'_>,
     result: &mut MaybeUninit<Itimerspec>,

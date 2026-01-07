@@ -122,6 +122,9 @@ jobs:
     - run: cargo check --workspace --release -vv --target=i686-unknown-linux-musl --features=all-apis --all-targets
     - run: cargo check --workspace --release -vv --target=i686-unknown-linux-musl --features=use-libc,all-apis --all-targets
     - run: cargo check --workspace --release -vv --target=wasm32-unknown-emscripten --features=all-apis --all-targets
+    - run: rustup component add rust-src
+    - run: cargo check --workspace --release -vv --target=riscv32gc-unknown-linux-gnu --features=all-apis --all-targets -Zbuild-std
+    - run: cargo check --workspace --release -vv --target=riscv32gc-unknown-linux-gnu --features=linux_latest,all-apis --all-targets -Zbuild-std
     - run: cargo check --workspace --release -vv --target=riscv64gc-unknown-linux-gnu --features=all-apis --all-targets
     - run: cargo check --workspace --release -vv --target=riscv64gc-unknown-linux-gnu --features=linux_latest,all-apis --all-targets
     - run: cargo check --workspace --release -vv --target=aarch64-unknown-linux-gnu --features=all-apis --all-targets
@@ -250,7 +253,7 @@ jobs:
       RUSTFLAGS: --cfg rustix_use_experimental_features
     strategy:
       matrix:
-        build: [ubuntu, ubuntu-22.04, i686-linux, aarch64-linux, powerpc-linux, powerpc64le-linux, riscv64-linux, s390x-linux, arm-linux, ubuntu-stable, i686-linux-stable, aarch64-linux-stable, riscv64-linux-stable, s390x-linux-stable, powerpc-linux-stable, powerpc64le-linux-stable, arm-linux-stable, ubuntu-1.63, i686-linux-1.63, aarch64-linux-1.63, riscv64-linux-1.63, s390x-linux-1.63, powerpc64le-linux, powerpc64le-linux-1.63, arm-linux-1.63, macos-latest, macos-13, windows, windows-2019, musl]
+        build: [ubuntu, ubuntu-22.04, i686-linux, aarch64-linux, powerpc-linux, powerpc64le-linux, riscv32-linux, riscv64-linux, s390x-linux, arm-linux, ubuntu-stable, i686-linux-stable, aarch64-linux-stable, riscv64-linux-stable, s390x-linux-stable, powerpc-linux-stable, powerpc64le-linux-stable, arm-linux-stable, ubuntu-1.63, i686-linux-1.63, aarch64-linux-1.63, riscv64-linux-1.63, s390x-linux-1.63, powerpc64le-linux, powerpc64le-linux-1.63, arm-linux-1.63, macos-latest, macos-13, windows, windows-2019, musl]
         include:
           - build: ubuntu
             os: ubuntu-latest
@@ -292,6 +295,13 @@ jobs:
             qemu: qemu-ppc64le
             qemu_args: -L /usr/powerpc64le-linux-gnu
             qemu_target: ppc64le-linux-user
+          - build: riscv32-linux
+            os: ubuntu-latest
+            rust: nightly
+            target: riscv32gc-unknown-linux-gnu
+            qemu: qemu-riscv32
+            qemu_args: -L /usr/riscv32-unknown-linux-gnu
+            qemu_target: riscv32-linux-user
           - build: riscv64-linux
             os: ubuntu-latest
             rust: nightly-2025-06-23
@@ -474,7 +484,9 @@ jobs:
     - name: Configure Cargo target
       run: |
         echo CARGO_BUILD_TARGET=${{ matrix.target }} >> $GITHUB_ENV
-        rustup target add ${{ matrix.target }}
+        if ! rustup target add ${{ matrix.target }}; then
+          echo BUILD_STD=-Zbuild-std >> $GITHUB_ENV
+        fi
       if: matrix.target != ''
 
     - uses: actions/cache@v4
@@ -498,6 +510,17 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ${{ matrix.libc_package }}
       if: matrix.libc_package != '' && matrix.os == 'ubuntu-latest'
+
+    - name: Install cross-compilation tools and libraries
+      run: |
+        # Toolchain for riscv32-linux-gnu is not available in APT,
+        # so download from https://github.com/riscv-collab/riscv-gnu-toolchain/releases.
+        riscv_toolchain_version=2021.09.21
+        curl --proto '=https' --tlsv1.2 -fsSL --retry 10 --retry-connrefused "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/${riscv_toolchain_version}/riscv32-glibc-ubuntu-18.04-nightly-${riscv_toolchain_version}-nightly.tar.gz" \
+          | sudo tar xzf - --strip-components 1 -C /usr/
+        upcase=$(echo ${{ matrix.target }} | awk '{ print toupper($0) }' | sed 's/-/_/g')
+        echo CARGO_TARGET_${upcase}_LINKER=${{ matrix.gcc }} >> $GITHUB_ENV
+      if: startsWith(matrix.target, 'riscv32')
 
     - name: Install qemu
       run: |
@@ -545,7 +568,7 @@ jobs:
         cargo update --package=lock_api --precise=0.4.12
 
     - run: |
-        cargo test --verbose --features=all-apis --release --workspace -- --nocapture
+        cargo test --verbose --features=all-apis --release --workspace $BUILD_STD -- --nocapture
       env:
         RUST_BACKTRACE: full
         MACOSX_DEPLOYMENT_TARGET: 10.7
@@ -556,7 +579,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        build: [ubuntu, i686-linux, aarch64-linux, powerpc-linux, powerpc64le-linux, riscv64-linux, s390x-linux, arm-linux]
+        build: [ubuntu, i686-linux, aarch64-linux, powerpc-linux, powerpc64le-linux, riscv32-linux, riscv64-linux, s390x-linux, arm-linux]
         include:
           - build: ubuntu
             os: ubuntu-latest
@@ -595,6 +618,13 @@ jobs:
             qemu: qemu-ppc64le
             qemu_args: -L /usr/powerpc64le-linux-gnu
             qemu_target: ppc64le-linux-user
+          - build: riscv32-linux
+            os: ubuntu-latest
+            rust: nightly
+            target: riscv32gc-unknown-linux-gnu
+            qemu: qemu-riscv32
+            qemu_args: -L /usr/riscv32-unknown-linux-gnu
+            qemu_target: riscv32-linux-user
           - build: riscv64-linux
             os: ubuntu-latest
             rust: stable
@@ -637,7 +667,9 @@ jobs:
     - name: Configure Cargo target
       run: |
         echo CARGO_BUILD_TARGET=${{ matrix.target }} >> $GITHUB_ENV
-        rustup target add ${{ matrix.target }}
+        if ! rustup target add ${{ matrix.target }}; then
+          echo BUILD_STD=-Zbuild-std >> $GITHUB_ENV
+        fi
       if: matrix.target != ''
 
     - uses: actions/cache@v4
@@ -661,6 +693,17 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ${{ matrix.libc_package }}
       if: matrix.libc_package != '' && matrix.os == 'ubuntu-latest'
+
+    - name: Install cross-compilation tools and libraries
+      run: |
+        # Toolchain for riscv32-linux-gnu is not available in APT,
+        # so download from https://github.com/riscv-collab/riscv-gnu-toolchain/releases.
+        riscv_toolchain_version=2021.09.21
+        curl --proto '=https' --tlsv1.2 -fsSL --retry 10 --retry-connrefused "https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/${riscv_toolchain_version}/riscv32-glibc-ubuntu-18.04-nightly-${riscv_toolchain_version}-nightly.tar.gz" \
+          | sudo tar xzf - --strip-components 1 -C /usr/
+        upcase=$(echo ${{ matrix.target }} | awk '{ print toupper($0) }' | sed 's/-/_/g')
+        echo CARGO_TARGET_${upcase}_LINKER=${{ matrix.gcc }} >> $GITHUB_ENV
+      if: startsWith(matrix.target, 'riscv32')
 
     - name: Install qemu
       run: |
@@ -695,7 +738,7 @@ jobs:
       if: matrix.qemu != '' && matrix.os == 'ubuntu-latest'
 
     - run: |
-        cargo test --verbose --features=use-libc,all-apis --release --workspace -- --nocapture
+        cargo test --verbose --features=use-libc,all-apis --release --workspace $BUILD_STD -- --nocapture
       env:
         RUST_BACKTRACE: full
 
